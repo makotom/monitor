@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="UTF-8">
+<title>User Monitor</title>
+
+<style>
+body{
+	background-color: #000;
+	color: #fff;
+}
+
+h1{
+	text-align: center;
+}
+
+ul#tools, .list_container > ol{
+	padding: 0;
+	list-style-type: none;
+}
+
+ul#tools{
+	text-align: center;
+}
+
+#tools a{
+	color: #fff;
+	text-align: center;
+	text-decoration: inherit;
+}
+
+.list_container > ol > li{
+	display: inline-block;
+
+	overflow: hidden;
+
+	box-sizing: border-box;
+	-moz-box-sizing: border-box;
+	width: 25%;
+
+	border: 4px solid #000;
+
+	background-color: #fff;
+
+	color: #000;
+	text-align: center;
+
+	cursor: pointer;
+}
+
+.list_container > ol > li > a{
+	display: block;
+
+	width: 100%;
+
+	color: #000;
+	font-size: 1.8em;
+	text-decoration: inherit;
+}
+
+.popup{
+	z-index: 2;
+	position: fixed;
+
+	top: 20%;
+	left: 20%;
+
+	width: 60%;
+	height: 60%;
+
+	border: 1px solid #000;
+
+	padding: 8px;
+
+	background: #fff;
+
+	color: #000;
+	text-align: center;
+}
+
+.popup button.status{
+	font-size: 2em;
+	width: 25%;
+}
+</style>
+
+<script>
+window.addEventListener("DOMContentLoaded", function(){
+	"use strict";
+
+	var SERVERNAME = "wss://localhost/",
+	PSK1 = "",
+	PSK2 = "",
+
+	STATUSES = [
+		{
+			value : "Away",
+			colour : "#f33"
+		},
+		{
+			value : "Available",
+			colour : "#0f0"
+		},
+		{
+			value : "Busy",
+			colour : "#ff0"
+		},
+		{
+			value : "Break",
+			colour : "#0ff"
+		}
+	],
+
+	ws = new WebSocket(SERVERNAME + PSK1),
+
+	listContainer = document.createElement("div"),
+
+	genUserDetails = function(user){
+		var popup = document.createElement("div"),
+
+		sendNewEvent = function(evType){
+			var key = PSK2 !== "" ? PSK2 : prompt("PSK?");
+
+			ws.send(JSON.stringify({
+				uid: user.uid,
+				type: evType,
+				psk : key
+			}));
+
+			popup.parentNode.removeChild(popup);
+		},
+
+		nameBox = document.createElement("h2"),
+		statusBox = document.createElement("p"),
+		statusValue = document.createElement("span"),
+		buttonBox = document.createElement("p");
+
+		nameBox.appendChild(document.createTextNode(user.fullname + " (" + user.uid + ")"));
+		popup.appendChild(nameBox);
+
+		statusValue.appendChild(document.createTextNode(STATUSES[user.status].value));
+		statusValue.style.backgroundColor = STATUSES[user.status].colour;
+		statusBox.appendChild(statusValue);
+
+		if(user.updated !== null){
+			statusBox.appendChild(document.createTextNode(" @ " + new Date(user.updated).toString()));
+		}
+
+		popup.appendChild(statusBox);
+
+		STATUSES.forEach(function(status, num){
+			var button = document.createElement("button");
+
+			button.appendChild(document.createTextNode(status.value));
+			button.className = "status";
+			button.style.backgroundColor = status.colour;
+			button.addEventListener("click", function(){
+				sendNewEvent(num);
+			});
+			buttonBox.appendChild(button);
+		});
+		popup.appendChild(buttonBox);
+
+		(function(){
+			var close = document.createElement("button");
+
+			close.appendChild(document.createTextNode("Close"));
+			close.addEventListener("click", function(){
+				popup.parentNode.removeChild(popup);
+			}, false);
+			popup.appendChild(close);
+		})();
+
+		popup.className = "popup";
+
+		document.getElementsByTagName("body")[0].appendChild(popup);
+	},
+
+	genUserList = function(users){
+		var listBox = document.createElement("ol");
+
+		users.forEach(function(user){
+			var name = document.createElement("a"),
+			time = document.createElement("span"),
+			li = document.createElement("li");
+
+			name.href = "";
+			name.appendChild(document.createTextNode(user.fullname));
+			li.appendChild(name);
+
+			time.appendChild(document.createTextNode("(" + (user.updated !== null ? new Date(user.updated).toLocaleTimeString() : "Never seen") + ")"));
+			li.appendChild(time);
+
+			li.style.backgroundColor = STATUSES[user.status].colour;
+
+			li.addEventListener("click", function(e){
+				e.preventDefault();
+				genUserDetails(user);
+			}, false);
+			listBox.appendChild(li);			
+		});
+
+		while(listContainer.firstChild !== null){
+			listContainer.removeChild(listContainer.firstChild);
+		}
+		listContainer.appendChild(listBox);
+	},
+
+	forceReloader = function(){
+		return document.location.reload(true);
+	},
+	setForceReload = function(){
+		return setTimeout(forceReloader, 60000); 
+	},
+	refresher = setForceReload();
+
+	listContainer.className = "list_container";
+	document.getElementsByTagName("body")[0].appendChild(listContainer);
+
+	if(location.hash !== ""){
+		PSK2 = location.hash.replace(/^#/, "");
+	}
+
+	ws.addEventListener("message", function(e){
+		clearTimeout(refresher);
+		genUserList(JSON.parse(e.data));
+		refresher = setForceReload();
+	}, false);
+}, false);
+</script>
+
+<h1>Our Lab</h1>
+
+<ul id="tools">
+<li><a href="stat">Statistics</a>
+<li><a href="log">Log</a>
+</ul>
