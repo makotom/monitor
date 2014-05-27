@@ -19,7 +19,7 @@
 			return {
 				uid : uid.toString(),
 				fullname : fullname.toString(),
-				status : 0, 
+				status : 0,
 				updated : NaN
 			};
 		},
