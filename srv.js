@@ -4,8 +4,8 @@
 	var PSK1 = "",
 	PSK2 = "",
 	USER_LIST = "users.csv",
-	LOG_FILE = "log.csv",
 	CLI_HTML = "cli.html",
+	DUMP_FILE = "dump.json",
 	SSL_KEY = "key.pem",
 	SSL_CERT = "cert.pem",
 
@@ -19,7 +19,7 @@
 			return {
 				uid : uid.toString(),
 				fullname : fullname.toString(),
-				status : 0,
+				status : 0, 
 				updated : NaN
 			};
 		},
@@ -33,28 +33,36 @@
 		},
 
 		Journal = function(){
-			var userList = fs.readFileSync(USER_LIST).toString(),
-
-			writeToLog = function(ev){
-				var logText = [ev.time, ev.uid, ev.type].join(",");
-
-				return fs.appendFileSync(LOG_FILE, logText + "\n");
-			},
-
-			users = {
+			var users = {
 				index : {},
 				raw : []
 			};
 
-			userList.trim().split("\n").forEach(function(row){
-				var parts = row.trim().split(","),
-				uid = parts.shift(),
-				fullname = parts.shift(),
-				user = new User(uid, fullname);
+			(function(){
+				if(!fs.existsSync(DUMP_FILE)){
+					fs.writeFileSync(DUMP_FILE, JSON.stringify({}));
+				}
+			})();
 
-				users.raw.push(user);
-				users.index[uid] = user;
-			});
+			(function(){
+				var userList = fs.readFileSync(USER_LIST).toString(),
+				dumpState = JSON.parse(fs.readFileSync(DUMP_FILE).toString());
+
+				userList.trim().split("\n").forEach(function(row){
+					var parts = row.trim().split(","),
+					uid = parts.shift(),
+					fullname = parts.shift(),
+					user = new User(uid, fullname);
+
+					users.raw.push(user);
+					users.index[uid] = user;
+
+					if(dumpState[user.uid] !== undefined){
+						user.status = dumpState[user.uid].status;
+						user.updated = dumpState[user.uid].updated;
+					}
+				});
+			})();
 
 			return {
 				getUsers : function(){ return users.raw; },
@@ -80,10 +88,10 @@
 					(function(){
 						var event = new Event(user.uid, evType);
 
-						writeToLog(event);
-
 						user.updated = event.time;
 						user.status = event.type;
+
+						fs.writeFileSync(DUMP_FILE, JSON.stringify(users.index));
 					})();
 
 					return true;
@@ -103,83 +111,6 @@
 				});
 			},
 
-			logStat = function(){
-				var LogUser = function(username){
-					return {
-						username : username,
-						status : 0,
-						lastIn : NaN,
-						lastOut : NaN,
-						lastUpdated : NaN,
-						workTime : 0
-					};
-				},
-				logUsers = {},
-				logString = fs.readFileSync(LOG_FILE).toString().trim();
-
-				if(logString.length > 0){
-					logString.split("\n").forEach(function(line){
-						var values = line.trim().split(","),
-						evTime = parseInt(values[0], 10),
-						evType = parseInt(values[2], 10),
-						user = typeof logUsers[values[1]] !== typeof undefined ? logUsers[values[1]] : logUsers[values[1]] = new LogUser(values[1]);
-
-						switch(evType){
-							case 0:
-								user.lastOut = evTime;
-
-								if(user.status !== 0){
-									user.workTime += user.lastOut - user.lastIn;
-								}
-
-								break;
-
-							case 1:
-							case 2:
-							case 3:
-								if(user.status === 0){
-									user.lastIn = evTime;
-								}
-
-								break;
-						}
-
-						user.status = evType;
-						user.lastUpdated = evTime;
-					});
-				}
-
-				return (function(){
-					var usersRanked = [],
-					iUsername = "",
-
-					ret = [];
-
-					for(iUsername in logUsers){
-						if(logUsers.hasOwnProperty(iUsername)){
-							usersRanked.push({
-								username : logUsers[iUsername].username,
-								status : logUsers[iUsername].status,
-								lastIn : !isNaN(logUsers[iUsername].lastIn) ? new Date(logUsers[iUsername].lastIn).toString() : "Never",
-								lastOut : !isNaN(logUsers[iUsername].lastOut) ? new Date(logUsers[iUsername].lastOut).toString() : "Never",
-								workTime : Math.round(logUsers[iUsername].workTime / 1000 / 60)
-							});
-						}
-					}
-
-					usersRanked.sort(function(a, b){
-						return b.workTime - a.workTime;
-					});
-
-					ret.push(["Username", "Last In", "Last Out", "Worktime"].join(","));
-					usersRanked.forEach(function(user){
-						ret.push([user.username, user.lastIn, user.lastOut, user.workTime].join(","));
-					});
-
-					return ret.join("\n");
-				})();
-			},
-
 			httpd = new https.createServer({
 				key : fs.readFileSync(SSL_KEY),
 				cert : fs.readFileSync(SSL_CERT)
@@ -190,19 +121,9 @@
 				path : "/" + PSK1
 			});
 
-			fs.appendFileSync(LOG_FILE, "");
-
 			httpd.on("request", function(req, res){
-				if(req.url === "/stat"){
-					res.writeHead(200, {"Content-Type" : "text/plain; charset=UTF-8"});
-					res.write(logStat());
-				}else if(req.url === "/log"){
-					res.writeHead(200, {"Content-Type" : "text/plain; charset=UTF-8"});
-					res.write(fs.readFileSync(LOG_FILE));
-				}else{
-					res.writeHead(200, {"Content-Type" : "text/html; charset=UTF-8"});
-					res.write(fs.readFileSync(CLI_HTML));
-				}
+				res.writeHead(200, {"Content-Type" : "text/html; charset=UTF-8"});
+				res.write(fs.readFileSync(CLI_HTML));
 				res.end();
 			});
 
